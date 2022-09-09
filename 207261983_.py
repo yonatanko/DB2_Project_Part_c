@@ -3,10 +3,16 @@ from pyspark.sql import functions as f
 from pyspark.sql.types import *
 import os
 import time
+from pyspark.ml import Pipeline
+from pyspark.ml.classification import RandomForestClassifier
+from pyspark.ml.feature import IndexToString, StringIndexer, VectorIndexer, VectorAssembler
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+import pyspark.sql.functions as f
+from pyspark.ml.feature import OneHotEncoder
 
-SCHEMA = StructType([StructField("Arrival_Time",LongType(),True),
-                     StructField("Creation_Time",LongType(),True),
-                     StructField("Device",StringType(),True),
+SCHEMA = StructType([StructField("Arrival_Time", LongType(), True),
+                     StructField("Creation_Time", LongType(), True),
+                     StructField("Device", StringType(), True),
                      StructField("Index", LongType(), True),
                      StructField("Model", StringType(), True),
                      StructField("User", StringType(), True),
@@ -15,8 +21,8 @@ SCHEMA = StructType([StructField("Arrival_Time",LongType(),True),
                      StructField("y", DoubleType(), True),
                      StructField("z", DoubleType(), True)])
 
-spark = SparkSession.builder.appName('demo_app')\
-    .config("spark.kryoserializer.buffer.max", "512m")\
+spark = SparkSession.builder.appName('demo_app') \
+    .config("spark.kryoserializer.buffer.max", "512m") \
     .getOrCreate()
 
 os.environ['PYSPARK_SUBMIT_ARGS'] = \
@@ -24,41 +30,86 @@ os.environ['PYSPARK_SUBMIT_ARGS'] = \
 kafka_server = 'dds2020s-kafka.eastus.cloudapp.azure.com:9092'
 topic = "activities"
 
-streaming = spark.readStream\
-                  .format("kafka")\
-                  .option("kafka.bootstrap.servers", kafka_server)\
-                  .option("subscribe", topic)\
-                  .option("startingOffsets", "earliest")\
-                  .option("failOnDataLoss",False)\
-                  .option("maxOffsetsPerTrigger", 10000)\
-                  .load()\
-                  .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
+stream_df = spark.readStream \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", kafka_server) \
+    .option("subscribe", topic) \
+    .option("startingOffsets", "earliest") \
+    .option("failOnDataLoss", False) \
+    .option("maxOffsetsPerTrigger", 10000) \
+    .load() \
+    .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
-
-query = streaming\
-    .writeStream.queryName("whole_Relation_query")\
-    .format("memory")\
-    .outputMode("append")\
+query = stream_df \
+    .writeStream.queryName("query") \
+    .format("memory") \
+    .outputMode("append") \
     .start()
 
+static_df = spark.read \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", kafka_server) \
+    .option("subscribe", topic) \
+    .option("startingOffsets", "earliest") \
+    .option("failOnDataLoss", False) \
+    .option("maxOffsetsPerTrigger", 10000) \
+    .load() \
+    .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
-time.sleep(30)
 
-print("This is the Stream:")
-for i in range(2):
-    spark.sql("SELECT * FROM whole_Relation_query").show()
-    time.sleep(5)
+def transformations(data):
+    print("hello")
+    # giving indexes to data labels
+    labelIndexer = StringIndexer(inputCol="gt", outputCol="indexedLabel").fit(data)
+    output = labelIndexer.transform(data)
+    output.show(5, truncate=False)
+    # print("hello 2")
+    # # giving indexes to categorial features
+    # indexers = [StringIndexer(inputCol=["Device"], outputCol=["Device_index"]),StringIndexer(inputCol=["User"], outputCol=["User_index"])]
+    # pipeline = Pipeline(stages=indexers)
+    # output = pipeline.fit(output).transform(output)
+    # output.show(5, truncate=False)
+#     # Creating sparse vectors out of indexes
+#     encoder = OneHotEncoder(inputCols=["Device_index", "User_index"], outputCols=["Device_vec", "User_vec"]).fit(output)
+#     output = encoder.transform(output)
+#     output.show(5, truncate=False)
+#     # Assemblig one feature vector
+#     assembler = VectorAssembler(
+#         inputCols=["Device_vec", "User_vec", "Creation_Time", "Arrival_Time", "x", "y", "z"],
+#         outputCol="features")
+#     output = assembler.transform(output)
+#     output.show(5, truncate=False)
+#     # giving indexes to features column
+#     featureIndexer = VectorIndexer(inputCol="features", outputCol="indexedFeatures").fit(output)
+#     output = featureIndexer.transform(output)
+#
+#     return output, labelIndexer
+#
+#
+# def random_forest(data):
+#     output, labelIndexer = transformations(data)
+#     # Split the data into training and test sets (30% held out for testing)
+#     (trainingData, testData) = output.randomSplit([0.7, 0.3])
+#
+#     # Train a RandomForest model.
+#     rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="indexedFeatures", numTrees=22, maxDepth=19)
+#     model = rf.fit(trainingData)
+#
+#     # Make predictions.
+#     predictions = model.transform(testData)
+#     labelConverter = IndexToString(inputCol="prediction", outputCol="predictedLabel", labels=labelIndexer.labels)
+#     output = labelConverter.transform(predictions)
+#     # Select (prediction, true label) and compute test error
+#     evaluator = MulticlassClassificationEvaluator(
+#         labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy")
+#     accuracy = evaluator.evaluate(predictions)
+#     print("Test Accuracy " + str(accuracy))
 
 
-print("This is the Static:")
-static_df = spark.read\
-                  .format("kafka")\
-                  .option("kafka.bootstrap.servers", kafka_server)\
-                  .option("subscribe", topic)\
-                  .option("startingOffsets", "earliest")\
-                  .option("failOnDataLoss",False)\
-                  .option("maxOffsetsPerTrigger", 10000)\
-                  .load()\
-                  .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
+def main():
+    transformations(static_df)
+    # random_forest(static_df)
 
-static_df.show()
+
+if __name__ == "__main__":
+    main()
