@@ -34,11 +34,11 @@ streaming = spark.readStream\
                   .load()\
                   .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
-activityCounts = streaming.groupBy("gt").count()
+
+activityCounts = streaming
 activityQuery = activityCounts\
   .writeStream.queryName("activity_counts")\
   .format("memory")\
-  .outputMode("complete")\
   .start()
 
 time.sleep(45)
