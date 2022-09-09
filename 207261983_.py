@@ -37,10 +37,10 @@ streaming = spark.readStream\
 
 wholeRelation = streaming
 Query = wholeRelation\
-  .writeStream.queryName("whole_Relation")\
+  .writeStream.queryName("whole_Relation_query")\
   .format("memory")\
   .start()
 
 time.sleep(45)
 
-spark.sql("SELECT * FROM whole_Relation").show()
+spark.sql("SELECT * FROM whole_Relation_query").show()
