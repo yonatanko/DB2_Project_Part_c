@@ -39,7 +39,7 @@ activityQuery = activityCounts\
   .writeStream.queryName("activity_counts")\
   .format("memory")\
   .outputMode("complete")\
-  .start
+  .start()
 
 time.sleep(45)
 
