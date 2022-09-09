@@ -35,12 +35,12 @@ streaming = spark.readStream\
                   .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
 
-activityCounts = streaming
-activityQuery = activityCounts\
-  .writeStream.queryName("activity_counts")\
+wholeRelation = streaming
+Query = wholeRelation\
+  .writeStream.queryName("whole_Relation")\
   .format("memory")\
   .start()
 
 time.sleep(45)
 
-spark.sql("SELECT * FROM activity_counts").show()
+spark.sql("SELECT * FROM whole_Relation").show()
