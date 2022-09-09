@@ -30,7 +30,7 @@ streaming = spark.readStream\
                   .option("subscribe", topic)\
                   .option("startingOffsets", "earliest")\
                   .option("failOnDataLoss",False)\
-                  .option("maxOffsetsPerTrigger", 432)\
+                  .option("maxOffsetsPerTrigger", 10000)\
                   .load()\
                   .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
@@ -44,6 +44,21 @@ query = streaming\
 
 time.sleep(30)
 
-for i in range(3):
+print("This is the Stream:")
+for i in range(2):
     spark.sql("SELECT * FROM whole_Relation_query").show()
     time.sleep(5)
+
+
+print("This is the Static:")
+static_df = spark.read\
+                  .format("kafka")\
+                  .option("kafka.bootstrap.servers", kafka_server)\
+                  .option("subscribe", topic)\
+                  .option("startingOffsets", "earliest")\
+                  .option("failOnDataLoss",False)\
+                  .option("maxOffsetsPerTrigger", 10000)\
+                  .load()\
+                  .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
+
+static_df.show()
