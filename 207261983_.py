@@ -8,7 +8,7 @@ from pyspark.ml.classification import RandomForestClassifier
 from pyspark.ml.feature import IndexToString, StringIndexer, VectorIndexer, VectorAssembler
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 import pyspark.sql.functions as f
-from pyspark.ml.feature import OneHotEncoder
+from pyspark.ml.feature import OneHotEncoderEstimator
 
 SCHEMA = StructType([StructField("Arrival_Time", LongType(), True),
                      StructField("Creation_Time", LongType(), True),
@@ -58,21 +58,20 @@ static_df = spark.read \
 
 
 def transformations(data):
-    print("hello")
     # giving indexes to data labels
     labelIndexer = StringIndexer(inputCol="gt", outputCol="indexedLabel").fit(data)
     output = labelIndexer.transform(data)
     output.show(5, truncate=False)
-    # print("hello 2")
-    # # giving indexes to categorial features
-    # indexers = [StringIndexer(inputCol=["Device"], outputCol=["Device_index"]),StringIndexer(inputCol=["User"], outputCol=["User_index"])]
-    # pipeline = Pipeline(stages=indexers)
-    # output = pipeline.fit(output).transform(output)
+    # giving indexes to categorial features
+    output = StringIndexer(inputCol="Device", outputCol="Device_index").fit(output).transform(output)
+    output.show(5, truncate=False)
+    output = StringIndexer(inputCol="User", outputCol="User_index").fit(output).transform(output)
+    output.show(5, truncate=False)
+    # # Creating sparse vectors out of indexes
+    # output = OneHotEncoderEstimator(inputCol="Device_index", outputCol="Device_vec").fit(output).transform(output)
     # output.show(5, truncate=False)
-#     # Creating sparse vectors out of indexes
-#     encoder = OneHotEncoder(inputCols=["Device_index", "User_index"], outputCols=["Device_vec", "User_vec"]).fit(output)
-#     output = encoder.transform(output)
-#     output.show(5, truncate=False)
+    # output = OneHotEncoderEstimator(inputCol="User_index", outputCol="User_vec").fit(output).transform(output)
+    # output.show(5, truncate=False)
 #     # Assemblig one feature vector
 #     assembler = VectorAssembler(
 #         inputCols=["Device_vec", "User_vec", "Creation_Time", "Arrival_Time", "x", "y", "z"],
