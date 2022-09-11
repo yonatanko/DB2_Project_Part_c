@@ -58,56 +58,47 @@ static_df = spark.read \
 
 
 def transformations(data):
-    # giving indexes to data labels
+    # giving indexes to data labels and categorical features
     labelIndexer = StringIndexer(inputCol="gt", outputCol="indexedLabel").fit(data)
     output = labelIndexer.transform(data)
-    output.show(5, truncate=False)
-    # giving indexes to categorial features
+    # giving indexes to categorical features
     output = StringIndexer(inputCol="Device", outputCol="Device_index").fit(output).transform(output)
-    output.show(5, truncate=False)
     output = StringIndexer(inputCol="User", outputCol="User_index").fit(output).transform(output)
+    # Creating sparse vectors out of indexes
+    encoder = OneHotEncoderEstimator(inputCols=["Device_index", "User_index"], outputCols=["Device_vec", "User_vec"]).fit(output)
+    output = encoder.transform(output)
+    # Assembling one feature vector
+    assembler = VectorAssembler(
+        inputCols=["Arrival_Time", "Creation_Time", "Arrival_Time", "x", "y", "z","Device_vec", "User_vec"],
+        outputCol="features")
+    output = assembler.transform(output)
     output.show(5, truncate=False)
-    # # Creating sparse vectors out of indexes
-    # output = OneHotEncoderEstimator(inputCol="Device_index", outputCol="Device_vec").fit(output).transform(output)
-    # output.show(5, truncate=False)
-    # output = OneHotEncoderEstimator(inputCol="User_index", outputCol="User_vec").fit(output).transform(output)
-    # output.show(5, truncate=False)
-#     # Assemblig one feature vector
-#     assembler = VectorAssembler(
-#         inputCols=["Device_vec", "User_vec", "Creation_Time", "Arrival_Time", "x", "y", "z"],
-#         outputCol="features")
-#     output = assembler.transform(output)
-#     output.show(5, truncate=False)
-#     # giving indexes to features column
-#     featureIndexer = VectorIndexer(inputCol="features", outputCol="indexedFeatures").fit(output)
-#     output = featureIndexer.transform(output)
-#
-#     return output, labelIndexer
-#
-#
-# def random_forest(data):
-#     output, labelIndexer = transformations(data)
-#     # Split the data into training and test sets (30% held out for testing)
-#     (trainingData, testData) = output.randomSplit([0.7, 0.3])
-#
-#     # Train a RandomForest model.
-#     rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="indexedFeatures", numTrees=22, maxDepth=19)
-#     model = rf.fit(trainingData)
-#
-#     # Make predictions.
-#     predictions = model.transform(testData)
-#     labelConverter = IndexToString(inputCol="prediction", outputCol="predictedLabel", labels=labelIndexer.labels)
-#     output = labelConverter.transform(predictions)
-#     # Select (prediction, true label) and compute test error
-#     evaluator = MulticlassClassificationEvaluator(
-#         labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy")
-#     accuracy = evaluator.evaluate(predictions)
-#     print("Test Accuracy " + str(accuracy))
+
+    return output, labelIndexer
+
+
+def random_forest(data):
+    output, labelIndexer = transformations(data)
+    # Split the data into training and test sets (30% held out for testing)
+    (trainingData, testData) = output.randomSplit([0.7, 0.3])
+
+    # Train a RandomForest model.
+    rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="indexedFeatures", numTrees=22, maxDepth=19)
+    model = rf.fit(trainingData)
+
+    # Make predictions.
+    predictions = model.transform(testData)
+    labelConverter = IndexToString(inputCol="prediction", outputCol="predictedLabel", labels=labelIndexer.labels)
+    output = labelConverter.transform(predictions)
+    # Select (prediction, true label) and compute test error
+    evaluator = MulticlassClassificationEvaluator(
+        labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy")
+    accuracy = evaluator.evaluate(predictions)
+    print("Test Accuracy " + str(accuracy))
 
 
 def main():
-    transformations(static_df)
-    # random_forest(static_df)
+    random_forest(static_df)
 
 
 if __name__ == "__main__":
