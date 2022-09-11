@@ -40,21 +40,17 @@ stream_df = spark.readStream \
     .load() \
     .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
-query = stream_df \
-    .writeStream.queryName("query") \
-    .format("memory") \
-    .outputMode("append") \
-    .start()
 
-static_df = spark.read \
-    .format("kafka") \
-    .option("kafka.bootstrap.servers", kafka_server) \
-    .option("subscribe", topic) \
-    .option("startingOffsets", "earliest") \
-    .option("failOnDataLoss", False) \
-    .option("maxOffsetsPerTrigger", 10000) \
-    .load() \
-    .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
+
+# static_df = spark.read \
+#     .format("kafka") \
+#     .option("kafka.bootstrap.servers", kafka_server) \
+#     .option("subscribe", topic) \
+#     .option("startingOffsets", "earliest") \
+#     .option("failOnDataLoss", False) \
+#     .option("maxOffsetsPerTrigger", 10000) \
+#     .load() \
+#     .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
 
 def transformations(data):
@@ -69,15 +65,16 @@ def transformations(data):
     output = encoder.transform(output)
     # Assembling one feature vector
     assembler = VectorAssembler(
-        inputCols=["Arrival_Time", "Creation_Time", "Arrival_Time", "x", "y", "z","Device_vec", "User_vec"],
-        outputCol="features")
+        inputCols=["Creation_Time", "Arrival_Time", "x", "y", "z", "Device_vec", "User_vec"],
+        outputCol="indexedFeatures")
     output = assembler.transform(output)
     output.show(5, truncate=False)
 
     return output, labelIndexer
 
 
-def random_forest(data):
+def random_forest(data, epoch_num):
+    time.sleep(5)
     output, labelIndexer = transformations(data)
     # Split the data into training and test sets (30% held out for testing)
     (trainingData, testData) = output.randomSplit([0.7, 0.3])
@@ -94,11 +91,15 @@ def random_forest(data):
     evaluator = MulticlassClassificationEvaluator(
         labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy")
     accuracy = evaluator.evaluate(predictions)
+    print("epoch:"+str(epoch_num))
     print("Test Accuracy " + str(accuracy))
 
 
 def main():
-    random_forest(static_df)
+    stream_df \
+        .writeStream.foreachBatch(random_forest) \
+        .start() \
+        .awaitTermination()
 
 
 if __name__ == "__main__":
