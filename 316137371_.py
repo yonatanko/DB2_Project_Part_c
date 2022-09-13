@@ -28,29 +28,26 @@ spark = SparkSession.builder.appName('demo_app') \
 os.environ['PYSPARK_SUBMIT_ARGS'] = \
     "--packages=org.apache.spark:spark-sql-kafka-0-10_2.12:2.4.8,com.microsoft.azure:spark-mssql-connector:1.0.1"
 kafka_server = 'dds2020s-kafka.eastus.cloudapp.azure.com:9092'
-topic = "activities"
 
 stream_df = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", kafka_server) \
-    .option("subscribe", topic) \
+    .option("subscribe", "activities") \
+    .option("startingOffsets", "earliest") \
+    .option("failOnDataLoss", False) \
+    .option("maxOffsetsPerTrigger", 100000) \
+    .load() \
+    .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
+
+static_df = spark.read \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", kafka_server) \
+    .option("subscribe", "static") \
     .option("startingOffsets", "earliest") \
     .option("failOnDataLoss", False) \
     .option("maxOffsetsPerTrigger", 10000) \
     .load() \
     .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
-
-
-
-# static_df = spark.read \
-#     .format("kafka") \
-#     .option("kafka.bootstrap.servers", kafka_server) \
-#     .option("subscribe", topic) \
-#     .option("startingOffsets", "earliest") \
-#     .option("failOnDataLoss", False) \
-#     .option("maxOffsetsPerTrigger", 10000) \
-#     .load() \
-#     .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
 
 def transformations(data):
@@ -68,31 +65,41 @@ def transformations(data):
         inputCols=["Creation_Time", "Arrival_Time", "x", "y", "z", "Device_vec", "User_vec"],
         outputCol="indexedFeatures")
     output = assembler.transform(output)
-    output.show(5, truncate=False)
 
     return output, labelIndexer
 
 
+trainingData, _ = transformations(static_df)
+print("finished transformations on static data :)")
+print("train size: " + str(trainingData.count()) + " rows")
+
+
 def random_forest(data, epoch_num):
+    global trainingData
     time.sleep(5)
     output, labelIndexer = transformations(data)
-    # Split the data into training and test sets (30% held out for testing)
-    (trainingData, testData) = output.randomSplit([0.7, 0.3])
-
+    testData = output
+    print("finished transformations on test data :)")
     # Train a RandomForest model.
     rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="indexedFeatures", numTrees=22, maxDepth=19)
     model = rf.fit(trainingData)
+    print("finished fitting :)")
 
     # Make predictions.
     predictions = model.transform(testData)
+    print("finished predicting :)")
     labelConverter = IndexToString(inputCol="prediction", outputCol="predictedLabel", labels=labelIndexer.labels)
     output = labelConverter.transform(predictions)
     # Select (prediction, true label) and compute test error
     evaluator = MulticlassClassificationEvaluator(
         labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy")
     accuracy = evaluator.evaluate(predictions)
+
     print("epoch:"+str(epoch_num))
     print("Test Accuracy " + str(accuracy))
+    trainingData = trainingData.union(testData)
+    print("finished union :)")
+    print("train size: " + str(trainingData.count()) + " rows")
 
 
 def main():
